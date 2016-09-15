@@ -22,6 +22,8 @@ func (master *Master) schedule(task *Task, proc string, filePathChan chan string
 
 	log.Printf("Scheduling %v operations\n", proc)
 
+	go master.handleUncompletedOperations(&wg)
+	
 	counter = 0
 	for filePath = range filePathChan {
 		operation = &Operation{proc, counter, filePath}
@@ -31,8 +33,10 @@ func (master *Master) schedule(task *Task, proc string, filePathChan chan string
 		wg.Add(1)
 		go master.runOperation(worker, operation, &wg)
 	}
-
+	
 	wg.Wait()
+	
+	close(master.uncompletedOperationChan)
 
 	log.Printf("%vx %v operations completed\n", counter, proc)
 	return counter
@@ -56,8 +60,9 @@ func (master *Master) runOperation(remoteWorker *RemoteWorker, operation *Operat
 
 	if err != nil {
 		log.Printf("Operation %v '%v' Failed. Error: %v\n", operation.proc, operation.id, err)
-		wg.Done()
 		master.failedWorkerChan <- remoteWorker
+		master.uncompletedOperationChan <- operation
+		//wg.Done()
 	} else {
 		wg.Done()
 		master.idleWorkerChan <- remoteWorker

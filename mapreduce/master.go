@@ -33,6 +33,9 @@ type Master struct {
 	// ADD EXTRA PROPERTIES HERE //
 	///////////////////////////////
 	// Fault Tolerance
+	
+	uncompletedOperationChan chan *Operation
+	
 }
 
 type Operation struct {
@@ -50,6 +53,22 @@ func newMaster(address string) (master *Master) {
 	master.failedWorkerChan = make(chan *RemoteWorker, IDLE_WORKER_BUFFER)
 	master.totalWorkers = 0
 	return
+}
+
+func (master *Master) handleUncompletedOperations(wg *sync.WaitGroup) {
+	
+	var(
+		worker *RemoteWorker
+	)
+	
+	master.uncompletedOperationChan = make(chan *Operation, RETRY_OPERATION_BUFFER)
+	for operation := range master.uncompletedOperationChan {
+        
+		worker = <-master.idleWorkerChan
+		go master.runOperation(worker, operation, wg)
+		
+    }
+	
 }
 
 // acceptMultipleConnections will handle the connections from multiple workers.
@@ -80,6 +99,20 @@ func (master *Master) handleFailingWorkers() {
 	/////////////////////////
 	// YOUR CODE GOES HERE //
 	/////////////////////////
+	
+	for elem := range master.failedWorkerChan {
+        
+		master.workersMutex.Lock()
+		
+		log.Printf("Removing worker %v from master list", elem.id)
+		delete(master.workers, elem.id)
+
+		master.workersMutex.Unlock()
+
+		
+    }
+	
+	
 }
 
 // Handle a single connection until it's done, then closes it.
